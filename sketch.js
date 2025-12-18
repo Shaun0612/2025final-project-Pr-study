@@ -8,6 +8,8 @@ let showOverlay = false;
 let overlayAlpha = 0;
 let overlayAlpha2 = 0;
 let timelinePhase = 0;
+let introPhase = 0;
+let introTransitionStart = 0;
 
 // 響應式縮放變數
 const BASE_W = 800;
@@ -56,6 +58,10 @@ function draw() {
   if (step !== lastStep) {
     stepStartMillis = millis();
     lastStep = step;
+    // 重置 Step 0 的狀態
+    if (step === 0) {
+      introPhase = 0;
+    }
     // 重置 Step 1 的狀態
     if (step === 1) {
       showOverlay = 0;
@@ -106,16 +112,49 @@ function drawIntro() {
 
   let animTime = millis() - stepStartMillis;
 
+  // 轉場動畫變數
+  let fadeAlpha = 255;
+  let prAnim = { x: 650, y: 250, s: 80, a: 255, txtSize: 16, txtOffset: 60 };
+
+  if (introPhase === 1) {
+    let t = millis() - introTransitionStart;
+    
+    // 1. 淡出其他元素 (500ms)
+    fadeAlpha = map(t, 0, 500, 255, 0, true);
+
+    // 2. PR 圖示移動與放大 (1000ms)
+    let moveT = constrain(t / 1000, 0, 1);
+    let ease = 1 - pow(1 - moveT, 3);
+    
+    prAnim.x = lerp(650, BASE_W/2, ease);
+    prAnim.y = 250;
+    prAnim.s = lerp(80, 150, ease);
+    prAnim.txtSize = lerp(16, 32, ease);
+    prAnim.txtOffset = lerp(60, 100, ease);
+
+    // 3. 等待 1 秒後淡出 PR (2000ms ~ 2500ms)
+    if (t > 2000) {
+      prAnim.a = map(t, 2000, 2500, 255, 0, true);
+    }
+
+    // 4. 切換步驟
+    if (t > 2500) {
+      step = 1;
+      introPhase = 0;
+      return;
+    }
+  }
+
   // 標題淡入
   let titleAlpha = constrain(map(animTime, 0, 800, 0, 255), 0, 255);
-  fill(255, titleAlpha);
+  fill(255, min(titleAlpha, fadeAlpha));
   textSize(28);
   text("🎬 歡迎進入 Premiere Pro 互動教室", BASE_W/2, 80);
   
   // 副標題淡入
   let subAlpha = constrain(map(animTime, 300, 1100, 0, 255), 0, 255);
   textSize(18);
-  fill(200, subAlpha);
+  fill(200, min(subAlpha, fadeAlpha));
   text("現在市面上有很多剪輯用的軟體", BASE_W/2, 130);
   
   // 定義要顯示的軟體列表
@@ -131,38 +170,77 @@ function drawIntro() {
   let iconY = 250;
 
   for (let i = 0; i < items.length; i++) {
-    // 計算每個項目的延遲動畫
-    let delay = i * 200;
-    let t = constrain((animTime - delay) / 500, 0, 1);
-    let ease = 1 - pow(1 - t, 3); // Ease out cubic
-    
-    let currentY = iconY + (1 - ease) * 50; // 從下方 50px 處滑入
-    let currentAlpha = t * 255;
+    // 特殊處理 Premiere Pro (最後一個項目)
+    if (i === 3) {
+      let curX, curY, curS, curA, curTxtS, curTxtOff;
+      
+      if (introPhase === 1) {
+        curX = prAnim.x;
+        curY = prAnim.y;
+        curS = prAnim.s;
+        curA = prAnim.a;
+        curTxtS = prAnim.txtSize;
+        curTxtOff = prAnim.txtOffset;
+      } else {
+        let delay = i * 200;
+        let t = constrain((animTime - delay) / 500, 0, 1);
+        let ease = 1 - pow(1 - t, 3);
+        curX = startX + i * spacing;
+        curY = iconY + (1 - ease) * 50;
+        curS = 80;
+        curA = t * 255;
+        curTxtS = 16;
+        curTxtOff = 60;
+      }
 
-    if (items[i].img) {
-      imageMode(CENTER);
-      tint(255, currentAlpha);
-      image(items[i].img, startX + i * spacing, currentY, 80, 80);
-      tint(255);
+      if (items[i].img) {
+        imageMode(CENTER);
+        tint(255, curA);
+        image(items[i].img, curX, curY, curS, curS);
+        tint(255);
+      }
+      fill(255, curA);
+      textSize(curTxtS);
+      text(items[i].label, curX, curY + curTxtOff);
+    } else {
+      // 其他軟體圖示
+      let delay = i * 200;
+      let t = constrain((animTime - delay) / 500, 0, 1);
+      let ease = 1 - pow(1 - t, 3);
+      
+      let currentY = iconY + (1 - ease) * 50;
+      let currentAlpha = min(t * 255, fadeAlpha); // 套用淡出效果
+
+      if (currentAlpha > 0) {
+        if (items[i].img) {
+          imageMode(CENTER);
+          tint(255, currentAlpha);
+          image(items[i].img, startX + i * spacing, currentY, 80, 80);
+          tint(255);
+        }
+        fill(255, currentAlpha);
+        textSize(16);
+        text(items[i].label, startX + i * spacing, currentY + 60);
+      }
     }
-
-    fill(255, 255, 255, currentAlpha);
-    textSize(16);
-    text(items[i].label, startX + i * spacing, currentY + 60);
   }
   
   // 按鈕淡入
   let btnAlpha = constrain(map(animTime, 1200, 1700, 0, 255), 0, 255);
+  btnAlpha = min(btnAlpha, fadeAlpha);
   if (btnAlpha > 0) {
     drawButton("點擊進入Pr教學", BASE_W/2, 420, 150, 40, btnAlpha);
   }
 }
 
 function drawLayoutInterface() {
+  let animTime = millis() - stepStartMillis;
+  let entryFade = constrain(map(animTime, 0, 800, 0, 1), 0, 1);
+
   // 1. 背景：PR1 (降低透明度)
   if (imgPR1) {
     imageMode(CORNER);
-    tint(255, 150);
+    tint(255, 150 * entryFade);
     image(imgPR1, 0, 0, BASE_W, BASE_H);
     tint(255);
   }
@@ -188,12 +266,12 @@ function drawLayoutInterface() {
   }
 
   // 標題 (保持在最上層，加入深色底色)
-  fill(0, 255, 255, 180);
+  fill(0, 255, 255, 180 * entryFade);
   rectMode(CENTER);
   rect(BASE_W/2, 50, 300, 50, 10);
   rectMode(CORNER);
   
-  fill(255);
+  fill(255, 255 * entryFade);
   textSize(22);
   text("第一步：認識基本的操作界面", BASE_W/2, 50);
   
@@ -390,7 +468,12 @@ function mousePressed() {
   // 粒子特效觸發
   for(let i=0; i<5; i++) particles.push(new Particle(mx, my));
 
-  if (step === 0 && isOverButton(BASE_W/2, 420, 150, 40)) step = 1;
+  if (step === 0 && isOverButton(BASE_W/2, 420, 150, 40)) {
+    if (introPhase === 0) {
+      introPhase = 1;
+      introTransitionStart = millis();
+    }
+  }
   else if (step === 1) {
     // 點擊切換圖片顯示階段
     if (showOverlay === 0) showOverlay = 1;
